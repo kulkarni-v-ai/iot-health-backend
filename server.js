@@ -1,27 +1,23 @@
 const express = require("express");
-const mysql = require("mysql2");
+const { Pool } = require("pg");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* ===== MySQL Connection (from Render ENV) ===== */
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASS,
-  database: process.env.DB_NAME
+/* ===== PostgreSQL Connection (Render) ===== */
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
-db.connect(err => {
-  if (err) {
-    console.error("DB Connection Error:", err);
-    return;
-  }
-  console.log("MySQL Connected");
-});
+db.connect()
+  .then(() => console.log("✅ PostgreSQL Connected"))
+  .catch(err => console.error("❌ DB Connection Error:", err));
 
 /* ===== API ENDPOINT ===== */
-app.get("/insert", (req, res) => {
+app.get("/insert", async (req, res) => {
   const bpm = parseInt(req.query.bpm);
   const spo2 = parseInt(req.query.spo2);
 
@@ -34,17 +30,18 @@ app.get("/insert", (req, res) => {
   else if (bpm > 100 || spo2 < 95) severity = 2;
 
   const sql =
-    "INSERT INTO health_data (bpm, spo2, severity) VALUES (?, ?, ?)";
+    "INSERT INTO health_data (bpm, spo2, severity) VALUES ($1, $2, $3)";
 
-  db.query(sql, [bpm, spo2, severity], err => {
-    if (err) {
-      console.error("Insert Error:", err);
-      return res.send("DB_ERROR");
-    }
+  try {
+    await db.query(sql, [bpm, spo2, severity]);
     res.send("OK");
-  });
+  } catch (err) {
+    console.error("Insert Error:", err);
+    res.send("DB_ERROR");
+  }
 });
 
+/* ===== SERVER ===== */
 app.listen(PORT, () =>
   console.log("Server running on port", PORT)
 );
